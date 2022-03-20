@@ -1,0 +1,72 @@
+name: Update wgpu-native Libraries
+
+on: [workflow_dispatch]
+
+env:
+  WGPU_COMMIT: c45b65eb9c33d3311960194e41b045ccafc5e4e6
+
+jobs:
+  build-wgpu:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: build - darwin/amd64
+            os: macos-latest
+            toolchain: stable
+            target: x86_64-apple-darwin
+            goos: darwin
+            goarch: amd64
+
+          - name: build - darwin/arm64
+            os: macos-latest
+            toolchain: stable
+            target: aarch64-apple-darwin
+            goos: darwin
+            goarch: arm64
+
+    steps:
+      # Checkout
+      - uses: actions/checkout@v2
+      # Install rust
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          target: ${{ matrix.target }}
+          default: true
+      # Setup Environment
+      - name: Setup Environment
+        run: ${{ matrix.setup_env }}
+        shell: bash
+      # Build
+      - name: Build
+        run: |
+          set -ex;
+          echo $CC;
+          git clone --recursive https://github.com/gfx-rs/wgpu-native.git tmp;
+          cd tmp;
+          git checkout $WGPU_COMMIT;
+          export CARGO_PROFILE_RELEASE_LTO=true;
+          export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1;
+          cargo build --release;
+          ls -al target/$CARGO_BUILD_TARGET/release/;
+          mkdir -p $GITHUB_WORKSPACE/internal/platform/webgpu/lib/$GOOS/$GOARCH;
+          mv target/$CARGO_BUILD_TARGET/release/libwgpu_native.a $GITHUB_WORKSPACE/internal/platform/webgpu/lib/$GOOS/$GOARCH/libwgpu_native.a;
+          cd ..;
+          rm -rf tmp;
+        shell: bash
+      # Send a PR
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v3
+        with:
+          commit-message: Update wgpu-native static library for ${{ matrix.goos }}/${{ matrix.goarch }}
+          branch-suffix: random
+          title: Update wgpu-native static library for ${{ matrix.goos }}/${{ matrix.goarch }}
+          body: Auto-generated pull request to build wgpu-native for ${{ matrix.goos }}/${{ matrix.goarch }}
